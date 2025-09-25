@@ -109,26 +109,38 @@ async def root():
 @api_router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        # Initialize LLM chat with mental health system message
+        # Initialize OpenRouter client
+        openrouter_key = os.environ.get('OPENROUTER_API_KEY')
+        if not openrouter_key:
+            raise HTTPException(status_code=500, detail="OpenRouter API key not configured")
+        
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=openrouter_key,
+            default_headers={"HTTP-Referer": "http://localhost:3000"}
+        )
+        
+        # Mental health system message
         system_message = """You are a compassionate mental health support assistant for students. 
         Provide empathetic, supportive responses while maintaining appropriate boundaries. 
         Encourage professional help when needed. Be warm, understanding, and non-judgmental.
         Keep responses concise but meaningful."""
         
-        chat = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=request.session_id,
-            system_message=system_message
-        ).with_model("openai", "gpt-4o")
-        
-        # Create user message
-        user_message = UserMessage(text=request.message)
-        
         # Check for crisis keywords
         is_crisis = detect_crisis(request.message)
         
-        # Get AI response
-        ai_response = await chat.send_message(user_message)
+        # Get AI response using OpenRouter
+        response = client.chat.completions.create(
+            model="openai/gpt-4o",  # You can change this to any model available on OpenRouter
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": request.message}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message.content
         
         # If crisis detected, log alert and modify response
         if is_crisis:
